@@ -1,0 +1,28 @@
+# Env and secrets
+.env
+.env.local
+.env.*.local
+
+# macOS
+.DS_Store
+
+# Go
+/telegram-timer
+*.exe
+*.test
+*.out
+/vendor/
+coverage.html
+go.work
+go.work.sum
+
+# Local DB and data
+/data/
+
+# IDE / editor
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+*~

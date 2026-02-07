@@ -1,0 +1,15 @@
+services:
+  telegram-timer:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - DB_PATH=/data/reminders.db
+      - ADDR=:8080
+    volumes:
+      - telegram-timer-data:/data
+
+volumes:
+  telegram-timer-data:
