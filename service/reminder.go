@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	hhmmRegex = regexp.MustCompile(`^(\d{2}):(\d{2})\s*(.*)$`)
-	seoul     *time.Location
+	hhmmRegex     = regexp.MustCompile(`^(\d{2}):(\d{2})\s*(.*)$`)
+	mmddHhmmRegex = regexp.MustCompile(`^(\d{2})/(\d{2})\s+(\d{2}):(\d{2})\s*(.*)$`)
+	seoul         *time.Location
 )
 
 func init() {
@@ -64,20 +65,67 @@ func parseRemindTime(text string, today time.Time) (hour, minute int, message st
 	return h, min, msg, nil
 }
 
-// Create parses "HH:mm 메시지", validates (today, not past), inserts and returns id.
-// All times are interpreted in Asia/Seoul.
+// resolveNextOccurrenceWithinOneYear returns the next occurrence of (month, day, hour, min)
+// that is >= now and <= now+1 year in Asia/Seoul. Used for MM/dd HH:mm (no year).
+func resolveNextOccurrenceWithinOneYear(month, day, hour, min int, now time.Time) (time.Time, error) {
+	nowSeoul := now.In(seoul)
+	oneYearLater := nowSeoul.AddDate(1, 0, 0)
+	thisYear := time.Date(nowSeoul.Year(), time.Month(month), day, hour, min, 0, 0, seoul)
+	nextYear := time.Date(nowSeoul.Year()+1, time.Month(month), day, hour, min, 0, 0, seoul)
+	if thisYear.After(nowSeoul) && !thisYear.After(oneYearLater) {
+		return thisYear, nil
+	}
+	if nextYear.After(nowSeoul) && !nextYear.After(oneYearLater) {
+		return nextYear, nil
+	}
+	return time.Time{}, fmt.Errorf("해당 일시가 오늘 기준 1년을 넘어갑니다")
+}
+
+// parseRemindInput parses either "MM/dd HH:mm 메시지" or "HH:mm 메시지".
+// For MM/dd: resolves to the next occurrence within 1 year from now.
+// For HH:mm only: uses today's date (must be in the future).
+// Returns remindAt, message, error.
+func parseRemindInput(text string, now time.Time) (remindAt time.Time, message string, err error) {
+	nowSeoul := now.In(seoul)
+	text = strings.TrimSpace(text)
+	// Try MM/dd HH:mm first
+	if m := mmddHhmmRegex.FindStringSubmatch(text); m != nil {
+		mo, _ := strconv.Atoi(m[1])
+		d, _ := strconv.Atoi(m[2])
+		h, _ := strconv.Atoi(m[3])
+		min, _ := strconv.Atoi(m[4])
+		msg := strings.TrimSpace(m[5])
+		if mo < 1 || mo > 12 || d < 1 || d > 31 || h < 0 || h > 23 || min < 0 || min > 59 {
+			return time.Time{}, "", fmt.Errorf("invalid date or time: MM 01-12, dd 01-31, HH 00-23, mm 00-59")
+		}
+		remindAt, err = resolveNextOccurrenceWithinOneYear(mo, d, h, min, nowSeoul)
+		if err != nil {
+			return time.Time{}, "", err
+		}
+		return remindAt, msg, nil
+	}
+	// Fall back to HH:mm (today only)
+	hour, min, msg, err := parseRemindTime(text, nowSeoul)
+	if err != nil {
+		return time.Time{}, "", err
+	}
+	remindAt = time.Date(nowSeoul.Year(), nowSeoul.Month(), nowSeoul.Day(), hour, min, 0, 0, seoul)
+	if !remindAt.After(nowSeoul) {
+		return time.Time{}, "", fmt.Errorf("remind time has already passed")
+	}
+	return remindAt, msg, nil
+}
+
+// Create parses "MM/dd HH:mm 메시지" or "HH:mm 메시지", validates (within 1 year / today not past), inserts and returns id.
+// All times are interpreted in Asia/Seoul. MM/dd resolves to the next occurrence within 1 year from now.
 func (s *ReminderService) Create(chatID int64, text string, now time.Time) (int64, error) {
 	nowSeoul := now.In(seoul)
 	if now.IsZero() {
 		nowSeoul = s.nowFunc().In(seoul)
 	}
-	hour, min, message, err := parseRemindTime(text, nowSeoul)
+	remindAt, message, err := parseRemindInput(text, nowSeoul)
 	if err != nil {
 		return 0, err
-	}
-	remindAt := time.Date(nowSeoul.Year(), nowSeoul.Month(), nowSeoul.Day(), hour, min, 0, 0, seoul)
-	if !remindAt.After(nowSeoul) {
-		return 0, fmt.Errorf("remind time has already passed")
 	}
 	createdAt := nowSeoul
 	res, err := s.db.Exec(
@@ -91,17 +139,15 @@ func (s *ReminderService) Create(chatID int64, text string, now time.Time) (int6
 	return id, nil
 }
 
-// ListUnsent returns unsent reminders for chat for today (Asia/Seoul), ordered by remind_at.
+// ListUnsent returns unsent reminders for chat with remind_at >= now (Asia/Seoul), ordered by remind_at.
 func (s *ReminderService) ListUnsent(chatID int64, now time.Time) ([]Reminder, error) {
 	nowSeoul := now.In(seoul)
-	start := time.Date(nowSeoul.Year(), nowSeoul.Month(), nowSeoul.Day(), 0, 0, 0, 0, seoul)
-	end := start.Add(24 * time.Hour)
 	rows, err := s.db.Query(
 		`SELECT id, chat_id, strftime('%Y-%m-%d %H:%M:%S', remind_at) as remind_at, message, sent,
 		 strftime('%Y-%m-%d %H:%M:%S', created_at) as created_at, sent_at, sent_30m, sent_10m, sent_5m FROM reminders
-		 WHERE chat_id = ? AND sent = 0 AND remind_at >= ? AND remind_at < ?
+		 WHERE chat_id = ? AND sent = 0 AND remind_at >= ?
 		 ORDER BY remind_at`,
-		chatID, formatTime(start), formatTime(end),
+		chatID, formatTime(nowSeoul),
 	)
 	if err != nil {
 		return nil, err
