@@ -84,8 +84,8 @@ func (h *Telegram) handleList(chatID int64, now time.Time) string {
 	}
 	var b strings.Builder
 	for i, r := range list {
-		t := r.RemindAt.Format("15:04")
-		b.WriteString("(" +strconv.Itoa(i+1) + ") " + t + " " + r.Message + "\n")
+		t := r.RemindAt.Format("06/01/02 15:04")
+		b.WriteString("(" + strconv.Itoa(i+1) + ") " + t + " " + r.Message + "\n")
 	}
 	return strings.TrimSuffix(b.String(), "\n")
 }
@@ -116,7 +116,7 @@ func (h *Telegram) handleRegister(chatID int64, text string, now time.Time) stri
 	for i, r := range list {
 		if r.Id == id {
 			pos = i + 1
-			ts = r.RemindAt.Format("15:04")
+			ts = r.RemindAt.Format("06/01/02 15:04")
 			break
 		}
 	}
