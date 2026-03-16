@@ -24,6 +24,16 @@ CREATE TABLE IF NOT EXISTS reminders (
 	sent_5m BOOLEAN NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_reminders_sent_remind_at ON reminders(sent, remind_at);
+
+CREATE TABLE IF NOT EXISTS routines (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	chat_id INTEGER NOT NULL,
+	schedule_type TEXT NOT NULL,
+	schedule_param TEXT NOT NULL,
+	message TEXT NOT NULL,
+	created_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_routines_chat_id ON routines(chat_id);
 `
 
 // advanceNotificationColumns: for existing DBs created before advance notifications.

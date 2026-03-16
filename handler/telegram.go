@@ -22,15 +22,16 @@ type Update struct {
 	} `json:"message"`
 }
 
-// Telegram handles POST /telegram/webhook: parse Update, route command or register reminder, send response.
+// Telegram handles POST /telegram/webhook: parse Update, route command or register reminder/routine, send response.
 type Telegram struct {
 	reminder *service.ReminderService
+	routine  *service.RoutineService
 	sender   *telegram.Client
 }
 
 // NewTelegram returns a Telegram handler.
-func NewTelegram(reminder *service.ReminderService, sender *telegram.Client) *Telegram {
-	return &Telegram{reminder: reminder, sender: sender}
+func NewTelegram(reminder *service.ReminderService, routine *service.RoutineService, sender *telegram.Client) *Telegram {
+	return &Telegram{reminder: reminder, routine: routine, sender: sender}
 }
 
 // ServeHTTP handles Telegram webhook POST.
@@ -57,6 +58,16 @@ func (h *Telegram) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case text == "/list":
 		reply = h.handleList(chatID, now)
+	case text == "/r-list":
+		reply = h.handleRoutineList(chatID)
+	case strings.HasPrefix(text, "/r-delete "):
+		reply = h.handleRoutineDelete(chatID, text)
+	case text == "/r-delete":
+		reply = "사용법: /r-delete {번호}"
+	case strings.HasPrefix(text, "/r "):
+		reply = h.handleRoutineRegister(chatID, strings.TrimPrefix(text, "/r "), now)
+	case text == "/r":
+		reply = "사용법: /r HH:mm 메시지 (매일) 또는 /r 요일 HH:mm 메시지 (매주, 예: 월 08:00 회의)"
 	case strings.HasPrefix(text, "/delete "):
 		reply = h.handleDelete(chatID, text, now)
 	case text == "/delete":
@@ -121,4 +132,72 @@ func (h *Telegram) handleRegister(chatID int64, text string, now time.Time) stri
 		}
 	}
 	return "알림을 등록했습니다. (" + ts + ", #" + strconv.Itoa(pos) + ")"
+}
+
+var weekdayLabels = []string{"일", "월", "화", "수", "목", "금", "토"}
+
+func formatRoutineSchedule(r service.Routine) string {
+	if r.ScheduleType == "daily" {
+		return "매일 " + r.ScheduleParam
+	}
+	if r.ScheduleType == "weekly" {
+		parts := strings.SplitN(r.ScheduleParam, ",", 2)
+		if len(parts) == 2 {
+			wd, _ := strconv.Atoi(parts[0])
+			if wd >= 0 && wd < len(weekdayLabels) {
+				return "매주 " + weekdayLabels[wd] + " " + parts[1]
+			}
+		}
+	}
+	return r.ScheduleType + " " + r.ScheduleParam
+}
+
+func (h *Telegram) handleRoutineList(chatID int64) string {
+	list, err := h.routine.List(chatID)
+	if err != nil {
+		log.Printf("routine list: %v", err)
+		return "루틴 목록 조회 중 오류가 발생했습니다."
+	}
+	if len(list) == 0 {
+		return "등록된 루틴이 없습니다."
+	}
+	var b strings.Builder
+	for i, r := range list {
+		desc := formatRoutineSchedule(r)
+		b.WriteString("(" + strconv.Itoa(i+1) + ") " + desc + " " + r.Message + "\n")
+	}
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
+func (h *Telegram) handleRoutineDelete(chatID int64, text string) string {
+	parts := strings.Fields(text)
+	if len(parts) != 2 {
+		return "사용법: /r-delete {번호}"
+	}
+	idx, err := strconv.Atoi(parts[1])
+	if err != nil || idx < 1 {
+		return "번호는 1 이상의 숫자여야 합니다."
+	}
+	if err := h.routine.DeleteByListIndex(chatID, idx); err != nil {
+		return err.Error()
+	}
+	return "루틴을 삭제했습니다."
+}
+
+func (h *Telegram) handleRoutineRegister(chatID int64, text string, now time.Time) string {
+	id, err := h.routine.Create(chatID, text, now)
+	if err != nil {
+		return "루틴 등록 실패: " + err.Error()
+	}
+	list, _ := h.routine.List(chatID)
+	var pos int
+	var desc string
+	for i, r := range list {
+		if r.Id == id {
+			pos = i + 1
+			desc = formatRoutineSchedule(r)
+			break
+		}
+	}
+	return "루틴을 등록했습니다. (" + desc + ", #" + strconv.Itoa(pos) + ")"
 }

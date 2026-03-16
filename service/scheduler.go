@@ -12,19 +12,21 @@ type Sender interface {
 	SendMessage(chatID int64, text string) error
 }
 
-// Scheduler runs every 1 minute, fetches due reminders, sends them and marks sent.
+// Scheduler runs every 1 minute, fetches due reminders and routines, sends them and marks reminders sent.
 type Scheduler struct {
 	reminder *ReminderService
+	routine  *RoutineService
 	sender   Sender
 	interval time.Duration
 	mu       sync.Mutex
 	stop     chan struct{}
 }
 
-// NewScheduler returns a Scheduler with 1-minute interval.
-func NewScheduler(reminder *ReminderService, sender Sender) *Scheduler {
+// NewScheduler returns a Scheduler with 1-minute interval. routine may be nil to disable routine notifications.
+func NewScheduler(reminder *ReminderService, routine *RoutineService, sender Sender) *Scheduler {
 	return &Scheduler{
 		reminder: reminder,
+		routine:  routine,
 		sender:   sender,
 		interval: time.Minute,
 		stop:     make(chan struct{}),
@@ -99,6 +101,19 @@ func (s *Scheduler) runOnce() {
 		}
 		if err := s.reminder.MarkSent(r.Id, now); err != nil {
 			log.Printf("scheduler MarkSent id=%d: %v", r.Id, err)
+		}
+	}
+	if s.routine != nil {
+		routineList, err := s.routine.ListDue(now)
+		if err != nil {
+			log.Printf("scheduler routine ListDue: %v", err)
+			return
+		}
+		for _, r := range routineList {
+			text := "🔄 " + now.Format("15:04") + " " + r.Message
+			if err := s.sender.SendMessage(r.ChatID, text); err != nil {
+				log.Printf("scheduler routine SendMessage chat=%d: %v", r.ChatID, err)
+			}
 		}
 	}
 }

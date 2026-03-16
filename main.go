@@ -29,9 +29,10 @@ func main() {
 	defer database.Close()
 
 	reminderSvc := service.NewReminderService(database)
+	routineSvc := service.NewRoutineService(database)
 	tgClient := telegram.NewClient(botToken)
-	webhookHandler := handler.NewTelegram(reminderSvc, tgClient)
-	sched := service.NewScheduler(reminderSvc, tgClient)
+	webhookHandler := handler.NewTelegram(reminderSvc, routineSvc, tgClient)
+	sched := service.NewScheduler(reminderSvc, routineSvc, tgClient)
 
 	go sched.Start()
 	defer sched.Stop()
