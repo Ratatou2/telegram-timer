@@ -67,7 +67,11 @@ func (h *Telegram) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(text, "/r "):
 		reply = h.handleRoutineRegister(chatID, strings.TrimPrefix(text, "/r "), now)
 	case text == "/r":
-		reply = "사용법: /r HH:mm 메시지 (매일) 또는 /r 요일 HH:mm 메시지 (매주, 예: 월 08:00 회의)"
+		reply = "사용법:\n" +
+			"· 매일: /r HH:mm 메시지 (예: /r 09:00 물 마시기)\n" +
+			"· 매주: /r [요일] HH:mm 메시지 — 요일은 맨 앞, 첫 HH:mm이 시간입니다.\n" +
+			"  단일 월 08:00 회의 / 복수 월,수,금 12:00 약 / 범위 월-금 18:00 퇴근 / 토-일 10:00 / 평일 09:00 / 주말 11:00\n" +
+			"· 범위는 월→일 순만 (금-월 등 역방향 불가)"
 	case strings.HasPrefix(text, "/delete "):
 		reply = h.handleDelete(chatID, text, now)
 	case text == "/delete":
@@ -141,11 +145,19 @@ func formatRoutineSchedule(r service.Routine) string {
 		return "매일 " + r.ScheduleParam
 	}
 	if r.ScheduleType == "weekly" {
-		parts := strings.SplitN(r.ScheduleParam, ",", 2)
-		if len(parts) == 2 {
-			wd, _ := strconv.Atoi(parts[0])
-			if wd >= 0 && wd < len(weekdayLabels) {
-				return "매주 " + weekdayLabels[wd] + " " + parts[1]
+		parts := strings.Split(r.ScheduleParam, ",")
+		if len(parts) >= 2 {
+			timePart := parts[len(parts)-1]
+			var dayLabels []string
+			for _, p := range parts[:len(parts)-1] {
+				wd, err := strconv.Atoi(p)
+				if err != nil || wd < 0 || wd >= len(weekdayLabels) {
+					continue
+				}
+				dayLabels = append(dayLabels, weekdayLabels[wd])
+			}
+			if len(dayLabels) > 0 {
+				return "매주 " + strings.Join(dayLabels, "·") + " " + timePart
 			}
 		}
 	}
