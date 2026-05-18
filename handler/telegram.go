@@ -56,6 +56,8 @@ func (h *Telegram) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var reply string
 	switch {
+	case text == "/help" || text == "/start":
+		reply = helpText
 	case text == "/list":
 		reply = h.handleList(chatID, now)
 	case text == "/r-list":
@@ -137,6 +139,25 @@ func (h *Telegram) handleRegister(chatID int64, text string, now time.Time) stri
 	}
 	return "알림을 등록했습니다. (" + ts + ", #" + strconv.Itoa(pos) + ")"
 }
+
+const helpText = "📌 사용 가능한 명령어\n" +
+	"\n" +
+	"［알림 (1회성)］\n" +
+	"· HH:mm 메시지 — 오늘 그 시각에 알림 (예: 09:00 물 마시기)\n" +
+	"· MM/dd HH:mm 메시지 — 지정 날짜에 알림, 오늘 기준 1년 이내 (예: 12/25 10:00 크리스마스)\n" +
+	"· /list — 등록된 알림 목록 (날짜·번호 포함)\n" +
+	"· /delete {번호} — 목록 번호로 알림 삭제\n" +
+	"  ※ 알림은 정시 외에 30분·10분·5분 전에도 미리 알려드립니다.\n" +
+	"\n" +
+	"［루틴 (반복)］\n" +
+	"· /r HH:mm 메시지 — 매일 반복 (예: /r 09:00 영양제)\n" +
+	"· /r [요일] HH:mm 메시지 — 매주 반복\n" +
+	"  단일 월 08:00 회의 / 복수 월,수,금 12:00 약\n" +
+	"  범위 월-금 18:00 퇴근 / 평일 09:00 / 주말 11:00 (범위는 월→일 순)\n" +
+	"· /r-list — 등록된 루틴 목록\n" +
+	"· /r-delete {번호} — 목록 번호로 루틴 삭제\n" +
+	"\n" +
+	"· /help — 이 도움말 다시 보기"
 
 var weekdayLabels = []string{"일", "월", "화", "수", "목", "금", "토"}
 
